@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+package users;
+option go_package = "github.com/mrqwer/gateway-mesh/proto/users";
+
+import "google/api/annotations.proto";
+
+service UsersService {
+  // Simple unary RPC
+  rpc GetUser(GetUserRequest) returns (GetUserResponse) {
+    option (google.api.http) = {
+      get: "/v1/users/{id}"
+    };
+  }
+
+  // List users
+  rpc ListUsers(ListUsersRequest) returns (ListUsersResponse) {
+    option (google.api.http) = {
+      get: "/v1/users"
+    };
+  }
+}
+
+// Messages
+message GetUserRequest {
+  string id = 1;
+}
+
+message GetUserResponse {
+  string id = 1;
+  string name = 2;
+  string email = 3;
+}
+
+message ListUsersRequest {}
+
+message ListUsersResponse {
+  repeated GetUserResponse users = 1;
+}

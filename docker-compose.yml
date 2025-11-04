@@ -1,0 +1,195 @@
+version: "3.9"
+
+services:
+  # ───────────────────────────
+  # Infrastructure
+  # ───────────────────────────
+  postgres:
+    image: postgres:16
+    container_name: postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: novapay
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    networks:
+      - backend
+    restart: always
+
+  redis:
+    image: redis:7
+    container_name: redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - backend
+    restart: always
+
+  consul:
+    image: consul:1.16
+    container_name: consul
+    command: agent -dev -client=0.0.0.0
+    ports:
+      - "8500:8500"
+    networks:
+      - backend
+    restart: always
+
+  # ───────────────────────────
+  # Core Services
+  # ───────────────────────────
+  users:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE: users
+    container_name: users-service
+    depends_on:
+      - redis
+      - postgres
+      - consul
+    environment:
+      - REDIS_ADDR=redis:6379
+      - DATABASE_URL=postgres://postgres:password@postgres:5432/novapay?sslmode=disable
+      - CONSUL_ADDR=consul:8500
+    networks:
+      - backend
+    ports:
+      - "50051:50051"
+    restart: on-failure
+
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE: gateway
+    container_name: gateway-service
+    depends_on:
+      - users
+      - redis
+      - consul
+    environment:
+      - USERS_SERVICE_ADDR=users:50051
+      - REDIS_ADDR=redis:6379
+      - CONSUL_ADDR=consul:8500
+    networks:
+      - backend
+    ports:
+      - "8080:8080"
+    restart: on-failure
+
+  billing:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE: billing
+    container_name: billing-service
+    depends_on:
+      - redis
+      - postgres
+      - consul
+    environment:
+      - REDIS_ADDR=redis:6379
+      - DATABASE_URL=postgres://postgres:password@postgres:5432/novapay?sslmode=disable
+      - CONSUL_ADDR=consul:8500
+    networks:
+      - backend
+    ports:
+      - "50052:50052"
+    restart: on-failure
+
+  transaction:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE: transaction
+    container_name: transaction-service
+    depends_on:
+      - redis
+      - postgres
+      - consul
+    environment:
+      - REDIS_ADDR=redis:6379
+      - DATABASE_URL=postgres://postgres:password@postgres:5432/novapay?sslmode=disable
+      - CONSUL_ADDR=consul:8500
+    networks:
+      - backend
+    ports:
+      - "50054:50054"
+    restart: on-failure
+
+  notification:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE: notification
+    container_name: notification-service
+    depends_on:
+      - redis
+      - consul
+    environment:
+      - REDIS_ADDR=redis:6379
+      - CONSUL_ADDR=consul:8500
+    networks:
+      - backend
+    ports:
+      - "50053:50053"
+    restart: on-failure
+
+  analytics:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE: analytics
+    container_name: analytics-service
+    depends_on:
+      - redis
+      - postgres
+      - consul
+    environment:
+      - REDIS_ADDR=redis:6379
+      - DATABASE_URL=postgres://postgres:password@postgres:5432/novapay?sslmode=disable
+      - CONSUL_ADDR=consul:8500
+    networks:
+      - backend
+    ports:
+      - "50055:50055"
+    restart: on-failure
+
+  # ───────────────────────────
+  # Reverse Proxy (optional)
+  # ───────────────────────────
+  traefik:
+    image: traefik:v2.10
+    container_name: traefik
+    command:
+      - --providers.docker
+      - --entrypoints.web.address=:80
+      - --api.insecure=true
+    ports:
+      - "80:80"
+      - "8081:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - backend
+    restart: always
+
+volumes:
+  redis_data:
+  pg_data:
+
+networks:
+  backend:
+    driver: bridge
